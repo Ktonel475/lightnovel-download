@@ -20,11 +20,11 @@ def parse_args():
 
 def query_chaps(book_no):
     print("未输入卷号，将返回书籍目录信息......")
-    editer = Editor(root_path="./out", book_no=book_no)
+    editor = Editor(root_path="./out", book_no=book_no)
     print("*******************************")
-    print(editer.title, editer.author)
+    print(editor.title, editor.author)
     print("*******************************")
-    editer.get_chap_list()
+    editor.get_chap_list()
     print("*******************************")
     print(
         "请输入所需要的卷号进行下载（多卷可以用英文逗号分隔或直接使用连字符，详情见说明）"
@@ -51,32 +51,32 @@ def download_single_volume(
     edit_line_hang=None,
 ):
 
-    editer = Editor(root_path=root_path, book_no=book_no, volume_no=volume_no)
+    editor = Editor(root_path=root_path, book_no=book_no, volume_no=volume_no)
     print("正在积极地获取书籍信息....")
-    success = editer.get_index_url()
+    success = editor.get_index_url()
     if not success:
         print("书籍信息获取失败")
         return
-    print(editer.title + "-" + editer.volume["book_name"], editer.author)
+    print(editor.title + "-" + editor.volume["book_name"], editor.author)
     print("****************************")
-    temp_path = editer.temp_path
-    editer.check_volume(is_gui=is_gui, signal=hang_signal, editline=edit_line_hang)
+    temp_path = editor.temp_path
+    editor.check_volume(is_gui=is_gui, signal=hang_signal, editline=edit_line_hang)
     print("正在下载文本....")
     print("*********************")
-    editer.get_text()
+    editor.get_text()
     print("*********************")
 
     print("正在下载插图.....................................")
-    editer.get_image(is_gui=is_gui, signal=progressring_signal)
+    editor.get_image(is_gui=is_gui, signal=progressring_signal)
 
     print("正在编辑元数据....")
-    editer.get_cover(is_gui=is_gui, signal=cover_signal)
-    editer.get_toc()
-    editer.get_content()
-    editer.get_epub_head()
+    editor.get_cover(is_gui=is_gui, signal=cover_signal)
+    editor.get_toc()
+    editor.get_content()
+    editor.get_epub_head()
 
     print("正在生成电子书....")
-    epub_file = editer.get_epub()
+    epub_file = editor.get_epub()
     print("生成成功！", f"电子书路径【{epub_file}】")
 
 
@@ -159,6 +159,7 @@ async def login():
 
     async with Stealth().use_async(async_playwright()) as p:
         browser = await p.chromium.launch(headless=False)
+        user_data_dir = "./browser_profile"
         page = await browser.new_page()
         await page.goto("http://www.wenku8.net/login.php")
         await page.locator('input[name="username"]').fill(args.username)
