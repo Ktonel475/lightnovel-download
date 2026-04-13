@@ -13,11 +13,12 @@ import re
 from PIL import Image
 import threading
 from concurrent.futures import ThreadPoolExecutor
+from playwright.sync_api import sync_playwright
 
 lock = threading.RLock()
 
 
-class Editer(object):
+class Editor(object):
     def __init__(self, root_path, book_no="0000", volume_no=1):
         self.url_head = "https://www.wenku8.net"
         self.header = {
@@ -30,15 +31,15 @@ class Editer(object):
         self.color_page_name = "彩页"
         self.html_buffer = dict()
 
-        main_html = self.get_html(self.main_page, is_gbk=True)
+        main_html = self.get_html(self.main_page)
+        print(main_html)
         match = re.search(r"<a href=\"(.*?)\">小说目录</a>", main_html)
         if match:
             self.cata_page = self.url_head + match.group(1)
         else:
-            print(
-                "Error: Could not find the '小说目录' link. The page layout may have changed."
-            )
+            print("脚本被拦截")
             self.cata_page = None
+            return
 
         if self.cata_page:
             cata_html = self.get_html(self.cata_page, is_gbk=True)
@@ -85,21 +86,20 @@ class Editer(object):
         self.pool = ThreadPoolExecutor(self.max_thread_num)
 
     # 获取html文档内容
-    def get_html(self, url, is_gbk=False):
-        time.sleep(1)
-        while True:
-            req = requests.get(url, headers=self.header)
-            if is_gbk:
-                req.encoding = "GBK"  # 这里是网页的编码转换，根据网页的实际需要进行修改，经测试这个编码没有问题
-            if (
-                "<title>Access denied | www.wenku8.net used Cloudflare to restrict access</title>"
-                in req.text
-            ):
-                time.sleep(3)
-            else:
-                break
-        req = req.text
-        return req
+    def get_html(self, url):
+        with sync_playwright() as p:
+            browser = p.chromium.launch(headless=True)
+
+            context = browser.new_context(
+                user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36"
+            )
+
+            page = context.new_page()
+            page.goto(url, wait_until="networkidle")
+            full_html = page.content()
+
+            browser.close()
+            return full_html
 
     def get_html_img(self, url, is_buffer=False):
         if is_buffer:

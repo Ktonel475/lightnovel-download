@@ -1,8 +1,11 @@
 import argparse
-from Editer import Editer
+from Editor import Editor
 import os
 import shutil
 from utils import *
+import asyncio
+from playwright.async_api import async_playwright, expect
+from playwright_stealth import Stealth
 
 
 def parse_args():
@@ -17,7 +20,7 @@ def parse_args():
 
 def query_chaps(book_no):
     print("未输入卷号，将返回书籍目录信息......")
-    editer = Editer(root_path="./out", book_no=book_no)
+    editer = Editor(root_path="./out", book_no=book_no)
     print("*******************************")
     print(editer.title, editer.author)
     print("*******************************")
@@ -48,7 +51,7 @@ def download_single_volume(
     edit_line_hang=None,
 ):
 
-    editer = Editer(root_path=root_path, book_no=book_no, volume_no=volume_no)
+    editer = Editor(root_path=root_path, book_no=book_no, volume_no=volume_no)
     print("正在积极地获取书籍信息....")
     success = editer.get_index_url()
     if not success:
@@ -89,10 +92,7 @@ def downloader_router(
 ):
     is_multi_chap = False
     volume_no_list = []
-    if book_no:
-        print("无法抓取资料")
-        return
-    elif len(book_no) == 0:
+    if len(book_no) == 0:
         print("请检查输入是否完整正确！")
         return
     elif volume_no == "":
@@ -153,10 +153,24 @@ def downloader_router(
         )
 
 
+async def login():
+    args.username = input("用戶名称:")
+    args.password = input("密码:")
+
+    async with Stealth().use_async(async_playwright()) as p:
+        browser = await p.chromium.launch(headless=False)
+        page = await browser.new_page()
+        await page.goto("http://www.wenku8.net/login.php")
+        await page.locator('input[name="username"]').fill(args.username)
+        await page.locator('input[name="password"]').fill(args.password)
+        await page.keyboard.press("Enter")
+        await expect(page).to_have_url("https://www.wenku8.net/index.php")
+
+
 if __name__ == "__main__":
     args = parse_args()
     download_path = os.path.join(os.path.expanduser("~"), "Downloads")
-
+    asyncio.run(login())
     if args.no_input:
         downloader_router(
             root_path="out", book_no=args.book_no, volume_no=args.volume_no
