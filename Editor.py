@@ -4,6 +4,8 @@
 import asyncio
 import nodriver as uc
 from bs4 import BeautifulSoup
+import cv2
+import numpy as np
 import os
 import re
 import threading
@@ -31,7 +33,6 @@ class Editor(object):
         self.max_thread_num = 8
         self.pool = ThreadPoolExecutor(self.max_thread_num)
 
-        # State management
         self.browser = None
         self.is_color_page = True
         self.temp_path = ""
@@ -41,10 +42,8 @@ class Editor(object):
         """Async factory to handle nodriver startup and initial scrapes"""
         self = cls(root_path, book_no, volume_no)
 
-        # Start nodriver with a persistent profile to help with Cloudflare
         self.browser = await uc.start()
 
-        # 1. Scrape Main Page
         main_html = await self.get_html(self.main_page)
         match = re.search(r"<a href=\"(.*?)\">小说目录</a>", main_html)
 
@@ -55,7 +54,6 @@ class Editor(object):
 
         self.cata_page = self.url_head + match.group(1)
 
-        # 2. Scrape Catalog
         cata_html = await self.get_html(self.cata_page)
         bf = BeautifulSoup(cata_html, "html.parser")
 
@@ -69,7 +67,6 @@ class Editor(object):
             else "Unknown_Author"
         )
 
-        # 3. Handle Cover URL
         cover_list = re.findall(r"<img src=\"(.*?)\"", main_html)
         self.cover_url = (
             cover_list[1]
@@ -77,7 +74,6 @@ class Editor(object):
             else (cover_list[0] if cover_list else "")
         )
 
-        # 4. Setup Paths
         safe_title = check_chars(self.title)
         self.temp_path = os.path.join(
             self.epub_path, f"temp_{safe_title}_{self.volume_no}"
@@ -88,7 +84,6 @@ class Editor(object):
     async def get_html(self, url):
         """Uses the shared nodriver instance to fetch HTML"""
         page = await self.browser.get(url)
-        # Random wait to mimic human reading and satisfy Cloudflare
         await page.wait(3)
         return await page.get_content()
 
@@ -109,7 +104,7 @@ class Editor(object):
             for img_url, img_name in tqdm(self.img_url_map.items()):
                 content = self.get_html_img(img_url)
                 with open(img_path + f"/{img_name}.jpg", "wb") as f:
-                    f.write(content)  # 写入二进制内容
+                    f.write(content)
 
     def get_cover(self, is_gui=False, signal=None):
         textfile = os.path.join(self.text_path, "cover.xhtml")
@@ -142,8 +137,13 @@ class Editor(object):
                 with lock:
                     self.html_buffer[url] = req.content
                 return req.content
-            except:
-                continue
+            except Exception as e:
+                print(f"Error: {e}")
+                userPreference = input("无法抓取图片，是否继续(y/N):")
+                if userPreference == "y":
+                    continue
+                else:
+                    return None
 
     def make_folder(self):
         os.makedirs(self.temp_path, exist_ok=True)
@@ -276,10 +276,8 @@ class Editor(object):
             return
 
         self.make_folder()
-        img_strs = []
         text_no = 0
 
-        # Process chapters
         for chap_name, chap_url in zip(
             self.volume["chap_names"], self.volume["chap_urls"]
         ):
@@ -288,6 +286,9 @@ class Editor(object):
 
             if is_color:
                 text_html_color = text2htmls(self.color_page_name, text)
+                color_file = os.path.join(self.text_path, "color.xhtml")
+                with open(color_file, "w", encoding="utf-8") as f:
+                    f.writelines(text_html_color)
             else:
                 text_html = text2htmls(chap_name, text)
                 filename = os.path.join(
@@ -297,22 +298,21 @@ class Editor(object):
                     f.writelines(text_html)
                 text_no += 1
 
-        # Finalize
-        self.get_image()  # Sync multi-threading
+        self.get_image()
         self.get_cover()
         self.get_toc()
         self.get_content()
         self.get_epub_head()
-        epub = self.get_epub()
+        # epub = self.get_epub()
 
-        await self.browser.stop()
+        self.browser.stop()
         print(f"Finished: {epub}")
 
 
-# --- Core Logic to Run the Class ---
+# Test
 async def main():
     downloader = await Editor.create(
-        root_path="./downloads", book_no="2451", volume_no=1
+        root_path="./downloads", book_no="2542", volume_no=6
     )
     if downloader:
         await downloader.run_full_export()

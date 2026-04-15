@@ -171,7 +171,6 @@ async def login():
 if __name__ == "__main__":
     args = parse_args()
     download_path = os.path.join(os.path.expanduser("~"), "Downloads")
-    asyncio.run(login())
     if args.no_input:
         downloader_router(
             root_path="out", book_no=args.book_no, volume_no=args.volume_no
