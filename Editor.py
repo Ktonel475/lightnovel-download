@@ -153,26 +153,37 @@ class Editor(object):
         self.img_path = os.path.join(self.temp_path, "OEBPS/Images")
         os.makedirs(self.img_path, exist_ok=True)
 
-    def get_toc(self):
-        if self.is_color_page:
-            ind = self.volume["chap_names"].index(self.color_chap_name)
-            self.volume["chap_names"].pop(ind)
-        toc_htmls = get_toc_html(self.title, self.volume["chap_names"])
-        textfile = self.temp_path + "/OEBPS/toc.ncx"
+    def get_toc(self, image_xhtml=False):
+        chap_names = self.volume["chap_names"].copy()
+
+        if self.color_chap_name in chap_names:
+            chap_names.remove(self.color_chap_name)
+
+        if image_xhtml:
+            chap_names.append("插图")
+
+        toc_htmls = get_toc_html(
+            self.title, chap_names, self.is_color_page, image_xhtml
+        )
+        textfile = os.path.join(self.temp_path, "OEBPS/toc.ncx")
         with open(textfile, "w+", encoding="utf-8") as f:
             f.writelines(toc_htmls)
 
-    def get_content(self):
+    def get_content(self, image_xhtml=False):
         num_chap = len(self.volume["chap_names"])
+
         num_img = len(os.listdir(self.img_path))
+
         content_htmls = get_content_html(
             self.title + "-" + self.volume["book_name"],
             self.author,
             num_chap,
             num_img,
             self.is_color_page,
+            image_xhtml,
         )
-        textfile = self.temp_path + "/OEBPS/content.opf"
+
+        textfile = os.path.join(self.temp_path, "OEBPS/content.opf")
         with open(textfile, "w+", encoding="utf-8") as f:
             f.writelines(content_htmls)
 
@@ -287,34 +298,29 @@ class Editor(object):
             text = await self.get_chap_text(chap_url, chap_name, is_color)
             chapter_data.append((chap_name, text, is_color))
 
-        # 2. Download images so they can be identified
         self.get_image()
 
-        # 3. Process and Write
         text_no = 0
-        mono_text_buffer = ""  # To hold mono images for the very end
+        mono_text_buffer = ""
+        image_xhtml = False
 
         for chap_name, text, is_color in chapter_data:
             if is_color:
                 monos, colors = self.imgProc.imgIdentifier(self.img_path)
 
-                # Create the Color-only content
                 color_text = ""
                 for img_file in colors:
                     color_text += f"[img:{img_file.split('.')[0]}]\n"
 
-                # Write color.xhtml immediately
                 text_html_color = text2htmls(self.color_page_name, color_text)
                 with open(
                     os.path.join(self.text_path, "color.xhtml"), "w", encoding="utf-8"
                 ) as f:
                     f.writelines(text_html_color)
 
-                # Store mono images to write later
                 for img_file in monos:
                     mono_text_buffer += f"[img:{img_file.split('.')[0]}]\n"
             else:
-                # Standard Chapter
                 text_html = text2htmls(chap_name, text)
                 filename = os.path.join(
                     self.text_path, f"{str(text_no).zfill(2)}.xhtml"
@@ -323,22 +329,20 @@ class Editor(object):
                     f.writelines(text_html)
                 text_no += 1
 
-        # 4. Write image.xhtml AFTER all chapters are done
         if mono_text_buffer:
-            # We can name this "插图" or "Afterword Images"
+            image_xhtml = True
             text_html_mono = text2htmls("插图", mono_text_buffer)
             with open(
                 os.path.join(self.text_path, "image.xhtml"), "w", encoding="utf-8"
             ) as f:
                 f.writelines(text_html_mono)
 
-        # 5. Finalize
         self.get_cover()
-        self.get_toc()
-        self.get_content()
+        self.get_toc(image_xhtml)
+        self.get_content(image_xhtml)
         self.get_epub_head()
-        epub = self.get_epub()
-        print(f"完成下载: {epub}")
+        # epub = self.get_epub()
+        # print(f"完成下载: {epub}")
         self.browser.stop()
 
 
