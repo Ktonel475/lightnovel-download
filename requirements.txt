@@ -4,5 +4,4 @@ bs4
 rich
 pyqt5
 PyQt-Fluent-Widgets[full]
-playwright
-playwright_stealth
+nodriver

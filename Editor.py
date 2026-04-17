@@ -15,13 +15,13 @@ from rich.progress import track as tqdm
 import shutil
 from PIL import Image
 import zipfile
+from imgIdentifier import ImageProcessor
 
 lock = threading.RLock()
 
 
 class Editor(object):
     def __init__(self, root_path, book_no="0000", volume_no=1):
-        # Sync attributes
         self.url_head = "https://www.wenku8.net"
         self.main_page = f"{self.url_head}/book/{book_no}.htm"
         self.color_chap_name = "插图"
@@ -32,6 +32,7 @@ class Editor(object):
         self.epub_path = root_path
         self.max_thread_num = 8
         self.pool = ThreadPoolExecutor(self.max_thread_num)
+        self.imgProc = ImageProcessor()
 
         self.browser = None
         self.is_color_page = True
@@ -276,20 +277,44 @@ class Editor(object):
             return
 
         self.make_folder()
-        text_no = 0
 
+        # 1. Gather text and URLs
+        chapter_data = []
         for chap_name, chap_url in zip(
             self.volume["chap_names"], self.volume["chap_urls"]
         ):
             is_color = chap_name == self.color_chap_name
             text = await self.get_chap_text(chap_url, chap_name, is_color)
+            chapter_data.append((chap_name, text, is_color))
 
+        # 2. Download images so they can be identified
+        self.get_image()
+
+        # 3. Process and Write
+        text_no = 0
+        mono_text_buffer = ""  # To hold mono images for the very end
+
+        for chap_name, text, is_color in chapter_data:
             if is_color:
-                text_html_color = text2htmls(self.color_page_name, text)
-                color_file = os.path.join(self.text_path, "color.xhtml")
-                with open(color_file, "w", encoding="utf-8") as f:
+                monos, colors = self.imgProc.imgIdentifier(self.img_path)
+
+                # Create the Color-only content
+                color_text = ""
+                for img_file in colors:
+                    color_text += f"[img:{img_file.split('.')[0]}]\n"
+
+                # Write color.xhtml immediately
+                text_html_color = text2htmls(self.color_page_name, color_text)
+                with open(
+                    os.path.join(self.text_path, "color.xhtml"), "w", encoding="utf-8"
+                ) as f:
                     f.writelines(text_html_color)
+
+                # Store mono images to write later
+                for img_file in monos:
+                    mono_text_buffer += f"[img:{img_file.split('.')[0]}]\n"
             else:
+                # Standard Chapter
                 text_html = text2htmls(chap_name, text)
                 filename = os.path.join(
                     self.text_path, f"{str(text_no).zfill(2)}.xhtml"
@@ -298,15 +323,23 @@ class Editor(object):
                     f.writelines(text_html)
                 text_no += 1
 
-        self.get_image()
+        # 4. Write image.xhtml AFTER all chapters are done
+        if mono_text_buffer:
+            # We can name this "插图" or "Afterword Images"
+            text_html_mono = text2htmls("插图", mono_text_buffer)
+            with open(
+                os.path.join(self.text_path, "image.xhtml"), "w", encoding="utf-8"
+            ) as f:
+                f.writelines(text_html_mono)
+
+        # 5. Finalize
         self.get_cover()
         self.get_toc()
         self.get_content()
         self.get_epub_head()
-        # epub = self.get_epub()
-
+        epub = self.get_epub()
+        print(f"完成下载: {epub}")
         self.browser.stop()
-        print(f"Finished: {epub}")
 
 
 # Test
