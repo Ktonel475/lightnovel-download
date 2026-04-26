@@ -1,11 +1,8 @@
 #!/usr/bin/python
 # -*- coding:utf-8 -*-
 
-import asyncio
 import nodriver as uc
 from bs4 import BeautifulSoup
-import cv2
-import numpy as np
 import os
 import re
 import threading
@@ -16,45 +13,53 @@ import shutil
 from PIL import Image
 import zipfile
 from imgIdentifier import ImageProcessor
+from rich.console import Console
 
+console = Console()
 lock = threading.RLock()
 
 
 class Editor(object):
-    def __init__(self, root_path, book_no="0000", volume_no=1):
+    def __init__(self, root_path, browser, book_no="0000"):
         self.url_head = "https://www.wenku8.net"
         self.main_page = f"{self.url_head}/book/{book_no}.htm"
+        self.book_no = book_no
+        self.epub_path = root_path
+        self.browser = browser  # Browser is now passed in
+
         self.color_chap_name = "插图"
         self.color_page_name = "彩页"
-        self.html_buffer = dict()
-        self.img_url_map = dict()
-        self.volume_no = volume_no
-        self.epub_path = root_path
         self.max_thread_num = 8
         self.pool = ThreadPoolExecutor(self.max_thread_num)
         self.imgProc = ImageProcessor()
 
-        self.browser = None
-        self.is_color_page = True
+        # Reset these per volume in reset_volume_data()
+        self.html_buffer = dict()
+        self.img_url_map = dict()
+        self.volume_no = None
         self.temp_path = ""
+        self.is_color_page = True
 
-    @classmethod
-    async def create(cls, root_path, book_no="0000", volume_no=1):
-        """Async factory to handle nodriver startup and initial scrapes"""
-        self = cls(root_path, book_no, volume_no)
+    def reset_volume_data(self, volume_no):
+        """Clears data from the previous volume so instances don't bleed into each other"""
+        self.volume_no = volume_no
+        self.html_buffer = dict()
+        self.img_url_map = dict()
+        safe_title = check_chars(self.title)
+        self.temp_path = os.path.join(
+            self.epub_path, f"temp_{safe_title}_{self.volume_no}"
+        )
 
-        self.browser = await uc.start()
-
+    async def init_book_info(self):
+        """Scrape main book info once per book, not per volume"""
         main_html = await self.get_html(self.main_page)
         match = re.search(r"<a href=\"(.*?)\">小说目录</a>", main_html)
 
         if not match:
             print("脚本被拦截或找不到目录链接")
-            await self.browser.stop()
-            return None
+            return None, None
 
         self.cata_page = self.url_head + match.group(1)
-
         cata_html = await self.get_html(self.cata_page)
         bf = BeautifulSoup(cata_html, "html.parser")
 
@@ -74,13 +79,7 @@ class Editor(object):
             if len(cover_list) > 1
             else (cover_list[0] if cover_list else "")
         )
-
-        safe_title = check_chars(self.title)
-        self.temp_path = os.path.join(
-            self.epub_path, f"temp_{safe_title}_{self.volume_no}"
-        )
-
-        return self
+        return self.title, self.author
 
     async def get_html(self, url):
         """Uses the shared nodriver instance to fetch HTML"""
@@ -262,34 +261,46 @@ class Editor(object):
         return volume_title_list, chap_names_list, chap_urls_list
 
     async def get_chap_text(self, url, chap_name, is_color=False):
-        print(f"Downloading: {chap_name}")
-        content_html = await self.get_html(url)
-        bf = BeautifulSoup(content_html, "html.parser")
-        text_with_head = bf.find("div", {"id": "content"})
-        text_chap = ""
+        """
+        获取章节文本，并实现单行状态切换
+        """
+        with console.status(
+            f"[bold blue]正在下载:[/bold blue] {chap_name}...", spinner="dots"
+        ):
+            content_html = await self.get_html(url)
+            bf = BeautifulSoup(content_html, "html.parser")
+            text_with_head = bf.find("div", {"id": "content"})
+            text_chap = ""
 
-        if is_color:
-            img_tags = text_with_head.find_all("img", {"class": "imagecontent"})
-            for img in img_tags:
-                src = img.get("src")
-                self.img_url_map[src] = str(len(self.img_url_map)).zfill(2)
-                text_chap += f"[img:{self.img_url_map[src]}]\n"
-        else:
-            # Clean up the text
-            for br in text_with_head.find_all("br"):
-                br.replace_with("\n")
-            text_chap = text_with_head.get_text()
+            if not text_with_head:
+                console.print(f"[bold red]✘ 章节 {chap_name} 内容解析失败[/bold red]")
+                return ""
+
+            if is_color:
+                img_tags = text_with_head.find_all("img", {"class": "imagecontent"})
+                for img in img_tags:
+                    src = img.get("src")
+                    img_id = str(len(self.img_url_map)).zfill(2)
+                    self.img_url_map[src] = img_id
+                    text_chap += f"[img:{img_id}]\n"
+            else:
+                for br in text_with_head.find_all("br"):
+                    br.replace_with("\n")
+                text_chap = text_with_head.get_text()
+
+        console.print(f"[bold green]✔ 已完成:[/bold green] {chap_name}")
 
         return text_chap
 
-    async def run_full_export(self):
-        """Main orchestrator for the class"""
+    async def process_single_volume(self, volume_no):
+        """The core logic for a single volume"""
+        self.reset_volume_data(volume_no)
+
         if not await self.get_index_url():
-            return
+            return False
 
         self.make_folder()
 
-        # 1. Gather text and URLs
         chapter_data = []
         for chap_name, chap_url in zip(
             self.volume["chap_names"], self.volume["chap_urls"]
@@ -343,17 +354,41 @@ class Editor(object):
         self.get_epub_head()
         epub = self.get_epub()
         print(f"完成下载: {epub}")
-        self.browser.stop()
+        return True
 
 
 # Test
-async def main():
-    downloader = await Editor.create(
-        root_path="./downloads", book_no="2542", volume_no=6
-    )
-    if downloader:
-        await downloader.run_full_export()
+async def download_task(root_path, book_no, volume_input):
+    """
+    volume_input can be:
+    - An integer (e.g., 5)
+    - A list (e.g., [1, 2, 3])
+    - A string range (e.g., "1-5")
+    """
+    browser = await uc.start()
+
+    try:
+        editor = Editor(root_path, browser, book_no)
+        if not await editor.init_book_info():
+            return
+
+        if isinstance(volume_input, str) and "-" in volume_input:
+            start, end = map(int, volume_input.split("-"))
+            vols = list(range(start, end + 1))
+        elif isinstance(volume_input, list):
+            vols = volume_input
+        else:
+            vols = [int(volume_input)]
+
+        for v in vols:
+            await editor.process_single_volume(v)
+
+    finally:
+        browser.stop()
 
 
 if __name__ == "__main__":
-    uc.loop().run_until_complete(main())
+    # Example: Download volumes 1, 2, and 3 of book 2542
+    uc.loop().run_until_complete(
+        download_task(root_path="./downloads", book_no="2542", volume_input="1-3")
+    )

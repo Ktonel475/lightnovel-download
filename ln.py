@@ -1,97 +1,101 @@
 import asyncio
 from Editor import Editor
 import argparse
+import sys
+import nodriver as uc
+import os
+from rich.console import Console
+from rich.panel import Panel
 
 
-def parse_args():
-    """Parse input arguments."""
-    parser = argparse.ArgumentParser(description="config")
-    parser.add_argument("--book_no", default=None, type=str)
-    parser.add_argument("--volume_no", default=None, type=str)
-    parser.add_argument(
-        "--no_input", action="store_true", help="Skip interactive input"
-    )
-    args = parser.parse_args()
-    return args
+def get_args():
+    parser = argparse.ArgumentParser(description="Book Downloader CLI", add_help=True)
+
+    parser.add_argument("-b", "--book-no", type=str, help="The ID of the book")
+
+    parser.add_argument("-v", "--volume-no", type=str, help="Volume range (e.g., 1-3)")
+
+    return parser.parse_args(), parser
 
 
-def downloader_router(root_path, book_no, volume_no):
-    # Null result handling (if volume_no is empty or None)
-    if not volume_no:
-        asyncio.run(run_downloader(book_no, None, root_path))
+async def run_downloader(book_no, vol_no, root_path):
+    # Console UI initalize
+    console = Console()
+
+    raw_val = str(vol_no).replace(" ", "")
+    try:
+        if "-" in raw_val:
+            start, end = map(int, raw_val.split("-"))
+            vols = list(range(start, end + 1))
+        elif "," in raw_val:
+            vols = [int(v) for v in raw_val.split(",") if v.strip().isdigit()]
+        else:
+            vols = [int(raw_val)]
+    except ValueError:
+        console.print(f"[bold red]错误:[/bold red] 卷号格式无效: {vol_no}")
         return
 
-    # Ensure we are working with a string for parsing logic
-    raw_val = str(volume_no).replace(" ", "")
+    browser = await uc.start()
 
-    if "-" in raw_val or "," in raw_val:
-        volumes_to_process = []
+    try:
+        editor = Editor(root_path, browser, book_no)
+        title, author = await editor.init_book_info()
 
-        if "," in raw_val:
-            volumes_to_process = [
-                int(v) for v in raw_val.split(",") if v.strip().isdigit()
-            ]
-        elif "-" in raw_val:
-            try:
-                start, end = map(int, raw_val.split("-"))
-                volumes_to_process = list(range(start, end + 1))
-            except ValueError:
-                print(f"Error: Invalid range format '{raw_val}'")
-                return
+        if not title:
+            console.print("[bold red]错误:[/bold red] 无法获取书籍信息。")
+            return
 
-        print(f"Detected multiple volumes: {volumes_to_process}")
+        info_display = (
+            f"[bold magenta]书名:[/bold magenta] {title}\n"
+            f"[bold cyan]作者:[/bold cyan] {author}\n"
+            f"[bold green]目标:[/bold green] 下载第 {vol_no} 卷 (共 {len(vols)} 个任务)"
+        )
+        console.print(
+            Panel(info_display, title="[yellow]确认下载详情[/yellow]", expand=False)
+        )
 
-        for v in volumes_to_process:
-            print(f"Processing volume: {v}...")
-            asyncio.run(run_downloader(book_no, v, root_path))
+        console.print("\n确认下载吗？ [[bold]Y/n[/bold]] ", end="")
 
-    else:
-        # Single number handling
+        user_input = await asyncio.to_thread(sys.stdin.readline)
+        choice = user_input.strip().lower()
+
+        if choice == "n":
+            console.print("[red]已取消。[/red]")
+            return
+
+        for v in vols:
+            console.rule(f"[bold yellow]正在处理第 {v} 卷[/bold yellow]")
+            await editor.process_single_volume(v)
+    except Exception as e:
+        console.print(f"[bold red]发生错误:[/bold red] {e}")
+
+    finally:
+        # Hide technical cleanup messages
+        old_stdout = sys.stdout
+        old_stderr = sys.stderr
+        sys.stdout = open(os.devnull, "w")
+        sys.stderr = open(os.devnull, "w")
+
         try:
-            v_int = int(raw_val)
-            asyncio.run(run_downloader(book_no, v_int, root_path))
-        except ValueError:
-            print(f"Error: '{raw_val}' is not a valid number.")
-
-
-async def run_downloader(book_no, volume_no, root_path):
-    downloader = await Editor.create(
-        root_path=root_path, book_no=str(book_no), volume_no=volume_no
-    )
-    if downloader:
-        await downloader.run_full_export()
+            browser.stop()
+            await asyncio.sleep(1)
+        except:
+            pass
+        finally:
+            sys.stdout = old_stdout
+            sys.stderr = old_stderr
+        console.print("\n[bold green]✔ 任务已全部完成。[/bold green]")
 
 
 if __name__ == "__main__":
-    args = parse_args()
+    args, parser = get_args()
     root_dir = "out"
 
-    # Scenario 1: Command line arguments are provided
-    if args.book_no:
-        print(f"Running in CLI mode for Book: {args.book_no}")
-        downloader_router(
-            root_path=root_dir, book_no=args.book_no, volume_no=args.volume_no
-        )
+    if not args.book_no:
+        print("Error: Missing required argument '-b' or '--book-no'\n")
+        parser.print_help()
+        sys.exit(1)
 
-    # Scenario 2: No arguments, or explicitly asked for interactive mode
-    elif not args.no_input:
-        while True:
-            try:
-                book_input = input("\n请输入书籍号 (输入 q 退出)：").strip()
-                if book_input.lower() == "q":
-                    break
-                if not book_input:
-                    continue
-
-                volume_input = input(
-                    "请输入卷号 (查看目录不输入直接回车，多卷用逗号或连字符)："
-                ).strip()
-
-                downloader_router(
-                    root_path=root_dir, book_no=book_input, volume_no=volume_input
-                )
-            except KeyboardInterrupt:
-                print("\n程序已停止。")
-                break
-    else:
-        print("Error: No book_no provided and --no_input is active.")
+    asyncio.run(
+        run_downloader(root_path=root_dir, book_no=args.book_no, vol_no=args.volume_no)
+    )
