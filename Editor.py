@@ -341,8 +341,8 @@ class Editor(object):
         self.get_toc(image_xhtml)
         self.get_content(image_xhtml)
         self.get_epub_head()
-        # epub = self.get_epub()
-        # print(f"完成下载: {epub}")
+        epub = self.get_epub()
+        print(f"完成下载: {epub}")
         self.browser.stop()
 
 
