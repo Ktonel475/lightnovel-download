@@ -1,79 +1,79 @@
-
+本项目派生自 [ShqWW/lightnovel-download](https://github.com/ShqWW/lightnovel-download)
 <div align="center">
-  <img src="resource/logo_big.png" width="300" style="margin-right: 3000px;"/> 
+  <img src="assets/logo_big.png" width="300" style="margin-right: 3000px;"/>
 </div>
 
 <h1 align="center">
   &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;EPUB下载器
 </h1>
 
+<p align="center">
+  <strong>一个简约的轻小说文库 (wenku8.net) 命令行下载工具</strong>
+</p>
 
+> [!NOTE]  
+> **项目现状：** 考虑到GUI的复杂程度和个人使用习惯，目前已**移除所有 GUI 界面**。本项目现在是一个纯粹的命令行工具（CLI），暂时不提供图形界面版本。
 
+## 功能点
 
+* **防爬避让：** 针对文库吧最近的拦截机制，改用了 `nodriver` (异步 undetected-chromedriver) 进行底层驱动，不再容易被 403。
+* **插图识别：** 能够自动区分“彩页”和“普通插图”。彩页会被集中放在书籍开头，还原实体书阅读体验。
+* **精简排版：** 生成的 EPUB 目录清晰，支持多线程下载图片。
+* **美观反馈：** 命令行界面使用了 `rich` 库，下载进度一目了然。
 
-[文库吧/轻小说文库](www.wenku8.net)(wenku8)网站小说下载，EPUB打包。
+## 快速开始
 
-特性:
+### 1. 环境准备
 
-* Fluent Design风格界面，下载进度与书籍封面显示，主题切换，下载目录自定义。
-* 前后端分离，同时支持命令行版本。
-* EPUB格式打包，支持多种阅读器。
-* 插图排版。
-* 书籍批量下载。
-* 图片多线程下载。
-* 缺失链接自动修复。
-* 自定义彩页。
-* ...................
+确保你的系统安装了 **Chrome 或 Edge 浏览器**。然后安装依赖：
 
-
-有建议或bug可以提issue，由于软件更新频繁，可以加QQ群获得更多信息：563072544
-
-图形界面使用[PyQt-Fluent-Widgets](https://pyqt-fluent-widgets.readthedocs.io/en/latest/index.html)界面编写。
-
-[release](https://github.com/ShqWW/lightnovel-download/releases/tag/downloader)页面发布了已经打包好的exe可执行程序，包括图形化版本和命令行版本(系统最低要求Windows 10)。
-
-界面样例：
-<div align="center">
-  <img src="resource/example1.png" width="400"/>
-  <img src="resource/example2.png" width="400"/>
-</div>
-
-## 使用前安装需要的包
-```
-pip install -r requirements.txt -i https://pypi.org/simple/
-```
-## 使用命令行模式运行(无需安装图形界面库，支持Linux):
-```
-python bilinovel.py
+```bash
+pip install -r requirements.txt
 ```
 
-## 使用图形界面运行:
-```
-python bilinovel_gui.py
+### 2. 使用说明
+
+直接在终端运行 `ln.py` 即可。
+
+```text
+用法: ln.py [-h] [-b BOOK_NO] [-v VOLUME_NO]
+
+轻小说下载器 命令行工具
+
+选项:
+  -h, --help            显示帮助信息并退出
+  -b BOOK_NO, --book-no BOOK_NO
+                        书籍 ID (例如: 2542)
+  -v VOLUME_NO, --volume-no VOLUME_NO
+                        下载卷号范围 (例如: '1-3', '1,3,5' 或 '1')
 ```
 
-## 使用pyinstaller打包:
-```
-pip install pyinstaller
-```
-```
-pyinstaller -F -w -i .\resource\logo.png --paths=C:\Users\haoru\bilinovel-download .\lightnovel_gui.py --clean
-```
-```
-pyinstaller -F -i .\resource\logo.png --paths=C:\Users\haoru\bilinovel-download .\lightnovel.py --clean
-```
+### 3. 使用示例
 
-## 相关项目：
+* **下载单卷：**
 
-* [轻小说文库EPUB下载器](https://github.com/ShqWW/lightnovel-download)
+  ```bash
+  python ln.py -b 2542 -v 1
+  ```
 
-* [哔哩轻小说EPUB下载器](https://github.com/ShqWW/bilinovel-download)
+* **下载多卷（非连续）：**
 
-* [拷贝漫画EPUB下载器](https://github.com/ShqWW/copymanga-download)
+  ```bash
+  python ln.py -b 2542 -v 1,3,5
+  ```
 
+* **下载范围（连续）：**
 
+  ```bash
+  python ln.py -b 2542 -v 1-10
+  ```
 
-## EPUB书籍编辑和管理工具推荐：
-1. [Sigil](https://sigil-ebook.com/) 
+## EPUB书籍编辑和管理工具推荐
+
+1. [Sigil](https://sigil-ebook.com/)
 2. [Calibre](https://www.calibre-ebook.com/)
+
+## 个人碎碎念
+
+本来在搜文库下载器时无意中找到原项目，原项目的epub打包是完全能用的，但是`requests` 及 `beautifulsoups` 在现代满大街都在拦机器人的情况就直接没啦，所以就自己写了个`nodriver` 的。本人习惯用cli就没有特别改GUI(毕竟要重写)，有空的话可能会做。。吧？wwww
 
