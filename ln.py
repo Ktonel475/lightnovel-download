@@ -9,11 +9,17 @@ from rich.panel import Panel
 
 
 def get_args():
-    parser = argparse.ArgumentParser(description="Book Downloader CLI", add_help=True)
+    parser = argparse.ArgumentParser(
+        description="轻小说下载器 命令行工具",
+        add_help=True,
+        formatter_class=argparse.RawTextHelpFormatter,
+    )
 
-    parser.add_argument("-b", "--book-no", type=str, help="The ID of the book")
+    parser.add_argument("-b", "--book-no", type=str, help="书籍 ID (例如: 2542)")
 
-    parser.add_argument("-v", "--volume-no", type=str, help="Volume range (e.g., 1-3)")
+    parser.add_argument(
+        "-v", "--volume-no", type=str, help="下载卷号范围 (例如: '1-3', '1,3,5' 或 '1')"
+    )
 
     return parser.parse_args(), parser
 

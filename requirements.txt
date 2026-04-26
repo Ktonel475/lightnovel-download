@@ -1,7 +1,5 @@
 # pip install -r requirements.txt -i https://pypi.org/simple/
-requests
-bs4
-rich
-pyqt5
-PyQt-Fluent-Widgets[full]
 nodriver
+beautifulsoup4
+rich
+Pillow

@@ -87,24 +87,14 @@ class Editor(object):
         await page.wait(3)
         return await page.get_content()
 
-    def get_image(self, is_gui=False, signal=None):
+    def get_image(self, signal=None):
         for url in self.img_url_map.keys():
             self.pool.submit(self.get_html_img, url)
         img_path = self.img_path
-        if is_gui:
-            len_iter = len(self.img_url_map.items())
-            signal.emit("start")
-            for i, (img_url, img_name) in enumerate(self.img_url_map.items()):
-                content = self.get_html_img(img_url)
-                with open(img_path + f"/{img_name}.jpg", "wb") as f:
-                    f.write(content)  # 写入二进制内容
-                signal.emit(int(100 * (i + 1) / len_iter))
-            signal.emit("end")
-        else:
-            for img_url, img_name in tqdm(self.img_url_map.items()):
-                content = self.get_html_img(img_url)
-                with open(img_path + f"/{img_name}.jpg", "wb") as f:
-                    f.write(content)
+        for img_url, img_name in tqdm(self.img_url_map.items()):
+            content = self.get_html_img(img_url)
+            with open(img_path + f"/{img_name}.jpg", "wb") as f:
+                f.write(content)
 
     def get_cover(self, is_gui=False, signal=None):
         textfile = os.path.join(self.text_path, "cover.xhtml")
